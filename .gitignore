@@ -31,3 +31,5 @@ pip-log.txt
 
 .env
 
+# dev db
+db.sqlite3
