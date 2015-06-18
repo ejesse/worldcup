@@ -247,6 +247,85 @@ class Group(models.Model):
             - drawing of lots by the FIFA Organising Committee.
 
         """
-        return OrderedDict()
 
+        standings = OrderedDict()
+
+        comparable_teams = []
+        for team in self.teams.all():
+            comparable_teams.append(ComparableTeam(team, self))
+
+        comparable_teams = sorted(comparable_teams, reverse=True)
+
+        for team in comparable_teams:
+            standings[team.team] = team.points
+
+        return standings
+
+
+class ComparableTeam():
+
+    def __init__(self, team, group):
+        self.team = team
+        self.group = group
+        self.points = self.group.get_points_for_team(self.team)
+        self.goal_differential = self.group.get_goal_differential_for_team(self.team)
+        self.goals_for = self.group.get_goals_for_team(self.team)
+        self.tied_with = []
+
+    def __lt__(self, other):
+        if self.points < other.points:
+            return True
+        if self.points > other.points:
+            return False
+        if self.goal_differential < other.goal_differential:
+            return True
+        if self.goal_differential > other.goal_differential:
+            return False
+        if self.goals_for < other.goals_for:
+            return True
+        if self.goals_for > other.goals_for:
+            return False
+        self.tied_with.append(other)
+        return False
+
+    def __le__(self, other):
+        raise NotImplementedError
+
+    def __eq__(self, other):
+        if self.points != other.points:
+            return False
+        if self.goal_differential != other.goal_differential:
+            return False
+        if self.goals_for != other.goals_for:
+            return False
+        self.tied_with.append(other)
+        return True
+
+    def __ne__(self, other):
+        if self.points != other.points:
+            return True
+        if self.goal_differential != other.goal_differential:
+            return True
+        if self.goals_for != other.goals_for:
+            return True
+        return False
+
+    def __gt__(self, other):
+        if self.points > other.points:
+            return True
+        if self.points < other.points:
+            return False
+        if self.goal_differential > other.goal_differential:
+            return True
+        if self.goal_differential < other.goal_differential:
+            return False
+        if self.goals_for > other.goals_for:
+            return True
+        if self.goals_for < other.goals_for:
+            return False
+        self.tied_with.append(other)
+        return False
+
+    def __ge__(self, other):
+        raise NotImplementedError
 

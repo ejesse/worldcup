@@ -1,9 +1,10 @@
+from collections import OrderedDict
 from random import randint
 
 from django.core.exceptions import ValidationError
 from django.test import TestCase
 
-from groups.models import Group, Fixture
+from groups.models import Group, Fixture, ComparableTeam
 from teams.tests import make_phony_team
 
 
@@ -534,24 +535,205 @@ class TestGroups(TestCase):
         self.assertEqual(group.get_goals_for_team_from_subset(team2, [team3, team1]), team2_goals)
         self.assertEqual(group.get_goals_for_team_from_subset(team3, [team2, team1]), team3_goals)
 
+
+class TestGetStandings(TestCase):
+    """
+    FIFA standard ranking and tie breakers:
+
+    The ranking of each team in each group will be determined as follows:
+
+        - points obtained in all group matches;
+        - goal difference in all group matches;
+        - number of goals scored in all group matches;
+        - If two or more teams are equal on the basis of the above three criteria, their rankings will be determined as follows:
+
+        - points obtained in the group matches between the teams concerned;
+        - goal difference in the group matches between the teams concerned;
+        - number of goals scored in the group matches between the teams concerned;
+        - drawing of lots by the FIFA Organising Committee.
+
+    This is sufficiently complex that we need to contrive several tests for scenarios,
+    all of which will test the various standings method on Group model
+
+    """
+
     def test_get_standings(self):
         """
-        FIFA standard ranking and tie breakers:
+        The ComparableTeam will handle the following cases:
+        - points obtained in all group matches;
+        - goal difference in all group matches;
+        - number of goals scored in all group matches;
 
-        The ranking of each team in each group will be determined as follows:
+        so we will contrive this setup:
+        team         points    gd    gf
+        team1        6        4      5
+        team2        6        0      2
+        team3        3        -2     2
+        team4        3        -2     1
 
-            - points obtained in all group matches;
-            - goal difference in all group matches;
-            - number of goals scored in all group matches;
-            - If two or more teams are equal on the basis of the above three criteria, their rankings will be determined as follows:
-
-            - points obtained in the group matches between the teams concerned;
-            - goal difference in the group matches between the teams concerned;
-            - number of goals scored in the group matches between the teams concerned;
-            - drawing of lots by the FIFA Organising Committee.
-
+        this separates 1 and 2 from 3 and 4 on points
+        then 1 and 2 on goal differential
+        then 3 and 4 on goals for
         """
-
         group = make_phony_group()
-        teams = group.teams.all()
+
         fixtures = group.fixtures.all()
+        teams = group.teams.all()
+        team1 = teams[0]
+        team2 = teams[1]
+        team3 = teams[2]
+        team4 = teams[3]
+
+        fixture1 = fixtures[0]
+        fixture1.home_team_score = 2 #team1
+        fixture1.away_team_score = 0 #team2
+        fixture1.save()
+
+        fixture2 = fixtures[1]
+        fixture2.home_team_score = 2 #team3
+        fixture2.away_team_score = 0 #team4
+        fixture2.save()
+
+        fixture3 = fixtures[2]
+        fixture3.home_team_score = 3 #team1
+        fixture3.away_team_score = 0 #team3
+        fixture3.save()
+
+        fixture4 = fixtures[3]
+        fixture4.home_team_score = 1 #team2
+        fixture4.away_team_score = 0 #team4
+        fixture4.save()
+
+        # should be 4,3,2,1 at this stage
+        expected = OrderedDict()
+        expected[team1] = 6
+        expected[team3] = 3
+        expected[team2] = 3
+        expected[team4] = 0
+        self.assertEqual(group.get_standings(), expected)
+
+        fixture5 = fixtures[4]
+        fixture5.home_team_score = 0 #team1
+        fixture5.away_team_score = 1 #team4
+        fixture5.save()
+
+        fixture6 = fixtures[5]
+        fixture6.home_team_score = 1 #team2
+        fixture6.away_team_score = 0 #team3
+        fixture6.save()
+
+        expected = OrderedDict()
+        expected[team1] = 6
+        expected[team2] = 6
+        expected[team3] = 3
+        expected[team4] = 3
+
+        self.assertEqual(group.get_standings(), expected)
+
+
+class TestComparableTeam(TestCase):
+
+    """
+    The ComparableTeam will handle the following cases:
+        - points obtained in all group matches;
+        - goal difference in all group matches;
+        - number of goals scored in all group matches;
+
+    so we will contrive this setup:
+    team         points    gd    gf
+    team1        6        4      5
+    team2        6        0      2
+    team3        3        -2     2
+    team4        3        -2     1
+
+    this separates 1 and 2 from 3 and 4 on points
+    then 1 and 2 on goal differential
+    then 3 and 4 on goals for
+
+    """
+
+    def setUp(self):
+
+        TestCase.setUp(self)
+        self.group = make_phony_group()
+
+        fixtures = self.group.fixtures.all()
+        teams = self.group.teams.all()
+        self.team1 = teams[0]
+        self.team2 = teams[1]
+        self.team3 = teams[2]
+        self.team4 = teams[3]
+
+        self.fixture1 = fixtures[0]
+        self.fixture1.home_team_score = 2 #team1
+        self.fixture1.away_team_score = 0 #team2
+        self.fixture1.save()
+
+        self.fixture2 = fixtures[1]
+        self.fixture2.home_team_score = 2 #team3
+        self.fixture2.away_team_score = 0 #team4
+        self.fixture2.save()
+
+        self.fixture3 = fixtures[2]
+        self.fixture3.home_team_score = 3 #team1
+        self.fixture3.away_team_score = 0 #team3
+        self.fixture3.save()
+
+        self.fixture4 = fixtures[3]
+        self.fixture4.home_team_score = 1 #team2
+        self.fixture4.away_team_score = 0 #team4
+        self.fixture4.save()
+
+        fixture5 = fixtures[4]
+        fixture5.home_team_score = 0 #team1
+        fixture5.away_team_score = 1 #team4
+        fixture5.save()
+
+        fixture6 = fixtures[5]
+        fixture6.home_team_score = 1 #team2
+        fixture6.away_team_score = 0 #team3
+        fixture6.save()
+
+        self.comparable_team1 = ComparableTeam(self.team1, self.group)
+        self.comparable_team2 = ComparableTeam(self.team2, self.group)
+        self.comparable_team3 = ComparableTeam(self.team3, self.group)
+        self.comparable_team4 = ComparableTeam(self.team4, self.group)
+
+    def test__lt__(self):
+        self.assertFalse(self.comparable_team1.__lt__(self.comparable_team2))
+        self.assertFalse(self.comparable_team2.__lt__(self.comparable_team3))
+        self.assertFalse(self.comparable_team3.__lt__(self.comparable_team4))
+        self.assertTrue(self.comparable_team4.__lt__(self.comparable_team3))
+        self.assertTrue(self.comparable_team3.__lt__(self.comparable_team2))
+        self.assertTrue(self.comparable_team2.__lt__(self.comparable_team1))
+
+    def test__le__(self):
+        self.assertRaises(NotImplementedError, self.comparable_team1.__le__, self.comparable_team2)
+
+    def test__eq__(self):
+        self.assertFalse(self.comparable_team1.__eq__(self.comparable_team2))
+        self.assertFalse(self.comparable_team2.__eq__(self.comparable_team3))
+        self.assertFalse(self.comparable_team3.__eq__(self.comparable_team4))
+        self.assertFalse(self.comparable_team1.__eq__(self.comparable_team3))
+        self.assertFalse(self.comparable_team1.__eq__(self.comparable_team4))
+        self.assertFalse(self.comparable_team2.__eq__(self.comparable_team4))
+
+    def test__ne__(self):
+        self.assertTrue(self.comparable_team1.__ne__(self.comparable_team2))
+        self.assertTrue(self.comparable_team2.__ne__(self.comparable_team3))
+        self.assertTrue(self.comparable_team3.__ne__(self.comparable_team4))
+        self.assertTrue(self.comparable_team1.__ne__(self.comparable_team3))
+        self.assertTrue(self.comparable_team1.__ne__(self.comparable_team4))
+        self.assertTrue(self.comparable_team2.__ne__(self.comparable_team4))
+
+    def test__gt__(self):
+        self.assertTrue(self.comparable_team1.__gt__(self.comparable_team2))
+        self.assertTrue(self.comparable_team2.__gt__(self.comparable_team3))
+        self.assertTrue(self.comparable_team3.__gt__(self.comparable_team4))
+        self.assertFalse(self.comparable_team4.__gt__(self.comparable_team3))
+        self.assertFalse(self.comparable_team3.__gt__(self.comparable_team2))
+        self.assertFalse(self.comparable_team2.__gt__(self.comparable_team1))
+
+    def test__ge__(self):
+        self.assertRaises(NotImplementedError, self.comparable_team1.__le__, self.comparable_team2)
+
